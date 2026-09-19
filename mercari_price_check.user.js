@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         メルカリ実勢価格チェック（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.7
+// @version      2.8
 // @description  メルカリ検索結果（安い順）から固定価格の出品を安い順に6件ひらき、「商品の状態」を読んで実勢価格の傾向を一覧にする。シートの K実勢価格・L参考ページ・M実勢メモ の3セルを1回でコピーできる
 // @match        https://jp.mercari.com/*
 // @grant        GM_setValue
@@ -157,9 +157,14 @@
       const bar = document.getElementById(prefix + '-headbar');
       if (bar) bar.insertAdjacentElement('afterend', d); else document.getElementById(prefix + '-panel').prepend(d);
     }
-    d.textContent = '✅ ' + text; d.style.display = 'block';
+    d.style.background = '#1a7f37'; d.textContent = '✅ ' + text; d.style.display = 'block';
     const l = document.getElementById(prefix + '-launch'); if (l) { l.style.background = '#1a7f37'; l.textContent = '✅ ' + l.textContent.replace(/^✅ /, ''); }
     clearTimeout(d._t); d._t = setTimeout(() => { d.style.display = 'none'; }, 60000);
+  }
+  function showFail(prefix, text) {
+    showDone(prefix, text);
+    const d = document.getElementById(prefix + '-done'); if (d) { d.style.background = '#c00'; d.textContent = '⚠ ' + text; }
+    const l = document.getElementById(prefix + '-launch'); if (l) { l.style.background = ''; l.textContent = l.textContent.replace(/^✅ /, ''); }
   }
   function hideDone(prefix) {
     const d = document.getElementById(prefix + '-done'); if (d) d.style.display = 'none';
@@ -174,7 +179,7 @@
     p.innerHTML = `
       <div id="ym-head" style="position:sticky;top:0;background:#fff;padding:12px 0 6px;border-bottom:2px solid #333;z-index:2">
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.7</small></b>
+        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.8</small></b>
         <span style="flex:1"></span>
         <label>件数 <input id="ym-n" type="number" value="${N_DEFAULT}" min="1" max="15" style="width:44px"></label>
         <button id="ym-run" style="cursor:pointer;background:#ff0211;color:#fff;border:0;border-radius:4px;padding:4px 10px;font-weight:bold">チェック開始</button>
@@ -192,6 +197,7 @@
           <div style="color:#555">最初は全部チェックなしです。写真を見て同じカードだけチェックを入れてから「チェック開始」（1件でも6件でも可）。サムネイルにマウスを乗せると基準画像と並べて大きく表示します。結果が出た後もチェックを外せば集計から抜けます。</div>
         </div>
       </div>
+      <div id="ym-msg" style="min-height:1.2em;color:#080;font-weight:bold"></div>
       <div id="ym-sum"></div>
       </div>
       <div id="ym-zoom" style="display:none;position:fixed;right:480px;bottom:16px;background:#fff;border:2px solid #333;border-radius:8px;padding:8px;z-index:100000;box-shadow:0 4px 16px rgba(0,0,0,.3)">
@@ -208,7 +214,6 @@
         </div>
         <button id="ym-test" style="cursor:pointer;margin-top:4px">接続テスト</button> <span id="ym-testmsg"></span>
       </div>
-      <div id="ym-msg" style="min-height:1.2em;color:#080"></div>
       <div id="ym-list"></div>`;
     document.body.appendChild(p);
     const ymBar = $('#ym-head').querySelector('div'); ymBar.id = 'ym-headbar';
@@ -289,14 +294,14 @@
     $('#ym-write').onclick = async () => {
       const msg = $('#ym-msg');
       const key = $('#ym-refurl').value.trim().replace(/^=IMAGE\("(.*)"\)$/, '$1');
-      if (!key) { msg.style.color = '#c00'; msg.textContent = '基準画像の欄に eBay画像URL（シートのN列）を入れてください。その行を探して書き込みます。'; return; }
+      if (!key) { msg.style.color = '#c00'; msg.textContent = '基準画像の欄に eBay画像URL（シートのN列）を入れてください。その行を探して書き込みます。'; showFail('ym', '基準画像の欄が空です。シートの N列（eBay画像URL）を貼ってください'); return; }
       const url = $('#ym-api').value.trim(), token = $('#ym-token').value.trim();
-      if (!url || !token) { msg.style.color = '#c00'; msg.textContent = 'シートAPI URL と APIトークンを入力してください。'; return; }
+      if (!url || !token) { msg.style.color = '#c00'; msg.textContent = 'シートAPI URL と APIトークンを入力してください。'; showFail('ym', '⚙ からシートAPI URL とトークンを入力してください'); return; }
       msg.style.color = '#080'; msg.textContent = 'シートに書き込み中…'; hideDone('ym');
       GM_xmlhttpRequest({
         method: 'POST', url, headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, timeout: 30000,
         data: JSON.stringify({ token, action: 'fill', key, values: { '実勢価格': best ? best.price : '', '参考ページ': best ? best.url : '', '実勢メモ': '実勢: ' + memo } }),
-        onload: res => { try { const j = JSON.parse(res.responseText); if (j.ok) { msg.textContent = `${j.tab} タブ ${j.row} 行目に書き込みました（${(j.written || []).join('・')}）。`; showDone('ym', `シート転記 完了：${j.tab} ${j.row}行目`); } else { msg.style.color = '#c00'; msg.textContent = '書き込み失敗: ' + j.error; } } catch (e) { msg.style.color = '#c00'; msg.textContent = '応答が読めません: ' + res.responseText.slice(0, 120); } },
+        onload: res => { try { const j = JSON.parse(res.responseText); if (j.ok) { msg.textContent = `${j.tab} タブ ${j.row} 行目に書き込みました（${(j.written || []).join('・')}）。`; showDone('ym', `シート転記 完了：${j.tab} ${j.row}行目`); } else { msg.style.color = '#c00'; msg.textContent = '書き込み失敗: ' + j.error; showFail('ym', '書き込み失敗: ' + j.error); } } catch (e) { msg.style.color = '#c00'; msg.textContent = '応答が読めません: ' + res.responseText.slice(0, 120); } },
         onerror: () => { msg.style.color = '#c00'; msg.textContent = '通信エラー'; }, ontimeout: () => { msg.style.color = '#c00'; msg.textContent = 'タイムアウト'; },
       });
     };
