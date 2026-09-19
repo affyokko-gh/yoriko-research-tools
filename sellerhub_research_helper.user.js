@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.8
+// @version      2.9
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -181,6 +181,25 @@
     return () => {};
   }
 
+
+  // ---- 完了表示：パネル上部に大きな緑の帯を出す（次の操作で消える）----
+  function showDone(prefix, text) {
+    let d = document.getElementById(prefix + '-done');
+    if (!d) {
+      d = document.createElement('div'); d.id = prefix + '-done';
+      d.style.cssText = 'display:none;background:#1a7f37;color:#fff;font-size:16px;font-weight:bold;padding:10px 12px;border-radius:6px;margin:6px 0;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.2)';
+      const bar = document.getElementById(prefix + '-headbar');
+      if (bar) bar.insertAdjacentElement('afterend', d); else document.getElementById(prefix + '-panel').prepend(d);
+    }
+    d.textContent = '✅ ' + text; d.style.display = 'block';
+    const l = document.getElementById(prefix + '-launch'); if (l) { l.style.background = '#1a7f37'; l.textContent = '✅ ' + l.textContent.replace(/^✅ /, ''); }
+    clearTimeout(d._t); d._t = setTimeout(() => { d.style.display = 'none'; }, 60000);
+  }
+  function hideDone(prefix) {
+    const d = document.getElementById(prefix + '-done'); if (d) d.style.display = 'none';
+    const l = document.getElementById(prefix + '-launch'); if (l) { l.style.background = ''; l.textContent = l.textContent.replace(/^✅ /, ''); }
+  }
+
   function buildPanel() {
     if ($('#yr-panel')) return;
     const panel = document.createElement('div');
@@ -189,7 +208,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v2.8</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v2.9</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -246,6 +265,7 @@
     if (!$('#yr-jp').value.trim()) $('#yr-jp').value = [g.jp, g.num ? String(g.num).padStart(3, '0') : ''].filter(Boolean).join(' ');
     if (!rows.length) { $('#yr-msg').textContent = '結果表が読めません。ページの読み込みを待ってから再読込してください。'; }
     render();
+    if (rows.length) { hideDone('yr'); const n = new Set(rows.map(r => r.group)).size; showDone('yr', `集計 完了：${rows.length}件を${n}グループに仕分けました。収録の「シートに書き込む」へ`); }
   }
 
   function render() {
@@ -270,8 +290,8 @@
           </div>
           ${rs.map(r => {
             const i = rows.indexOf(r);
-            return `<div style="display:grid;grid-template-columns:18px 1fr 70px 36px 130px;gap:4px;padding:2px 0;border-top:1px solid #eee;${r.on ? '' : 'color:#aaa'}">
-              <input type="checkbox" data-i="${i}" ${r.on ? 'checked' : ''}>
+            return `<div style="display:grid;grid-template-columns:24px 1fr 70px 36px 130px;gap:4px;padding:2px 0;border-top:1px solid #eee;${r.on ? '' : 'color:#aaa'}">
+              <input type="checkbox" data-i="${i}" ${r.on ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer">
               <span title="${r.title}">${r.title.slice(0, 64)}</span>
               <span style="text-align:right">$${r.total}${r.ship && r.free < 100 ? '<small>(送' + r.ship + ')</small>' : ''}</span>
               <span style="text-align:right">×${r.sold}</span>
@@ -357,16 +377,17 @@
     const r = buildRow(gi); if (!r) return;
     showPreview(r);
     const msg = $('#yr-msg');
-    msg.style.color = '#080'; msg.textContent = 'シートに書き込み中…';
+    msg.style.color = '#080'; msg.textContent = 'シートに書き込み中…'; hideDone('yr');
     try {
       const res = await apiPost({ action: 'append', tab: $('#yr-tab').value, cells: r.cells });
       msg.textContent = `「${r.group}」を ${res.tab} タブの ${res.row} 行目に追加しました。`;
+      showDone('yr', `シート転記 完了：${res.tab} ${res.row}行目（${r.group}）→ 次はメルカリで N列のURLを基準画像に`);
     } catch (e) {
       msg.style.color = '#c00'; msg.textContent = '書き込み失敗: ' + e.message;
     }
   }
 
-  const VERSION = '2.8';
+  const VERSION = '2.9';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;

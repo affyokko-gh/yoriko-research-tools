@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         メルカリ実勢価格チェック（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.5
+// @version      2.7
 // @description  メルカリ検索結果（安い順）から固定価格の出品を安い順に6件ひらき、「商品の状態」を読んで実勢価格の傾向を一覧にする。シートの K実勢価格・L参考ページ・M実勢メモ の3セルを1回でコピーできる
 // @match        https://jp.mercari.com/*
 // @grant        GM_setValue
@@ -147,15 +147,34 @@
     return () => {};
   }
 
+
+  // ---- 完了表示：パネル上部に大きな緑の帯を出す（次の操作で消える）----
+  function showDone(prefix, text) {
+    let d = document.getElementById(prefix + '-done');
+    if (!d) {
+      d = document.createElement('div'); d.id = prefix + '-done';
+      d.style.cssText = 'display:none;background:#1a7f37;color:#fff;font-size:16px;font-weight:bold;padding:10px 12px;border-radius:6px;margin:6px 0;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.2)';
+      const bar = document.getElementById(prefix + '-headbar');
+      if (bar) bar.insertAdjacentElement('afterend', d); else document.getElementById(prefix + '-panel').prepend(d);
+    }
+    d.textContent = '✅ ' + text; d.style.display = 'block';
+    const l = document.getElementById(prefix + '-launch'); if (l) { l.style.background = '#1a7f37'; l.textContent = '✅ ' + l.textContent.replace(/^✅ /, ''); }
+    clearTimeout(d._t); d._t = setTimeout(() => { d.style.display = 'none'; }, 60000);
+  }
+  function hideDone(prefix) {
+    const d = document.getElementById(prefix + '-done'); if (d) d.style.display = 'none';
+    const l = document.getElementById(prefix + '-launch'); if (l) { l.style.background = ''; l.textContent = l.textContent.replace(/^✅ /, ''); }
+  }
+
   function buildPanel() {
     if ($('#ym-panel')) return;
     const p = document.createElement('div');
     p.id = 'ym-panel';
-    p.style.cssText = 'position:fixed;right:16px;bottom:16px;width:700px;max-height:90vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:0 12px 12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3);color:#222';
+    p.style.cssText = 'position:fixed;right:16px;bottom:16px;width:440px;max-height:60vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:0 12px 12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3);color:#222';
     p.innerHTML = `
       <div id="ym-head" style="position:sticky;top:0;background:#fff;padding:12px 0 6px;border-bottom:2px solid #333;z-index:2">
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.5</small></b>
+        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.7</small></b>
         <span style="flex:1"></span>
         <label>件数 <input id="ym-n" type="number" value="${N_DEFAULT}" min="1" max="15" style="width:44px"></label>
         <button id="ym-run" style="cursor:pointer;background:#ff0211;color:#fff;border:0;border-radius:4px;padding:4px 10px;font-weight:bold">チェック開始</button>
@@ -166,7 +185,7 @@
         <button id="ym-close" style="cursor:pointer">×</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-        <img id="ym-ref" style="width:120px;height:160px;object-fit:contain;border:1px dashed #999;background:#f4f4f4;cursor:zoom-in" title="比較用の基準画像（クリックで拡大）">
+        <img id="ym-ref" style="width:90px;height:120px;object-fit:contain;border:1px dashed #999;background:#f4f4f4;cursor:zoom-in" title="比較用の基準画像（クリックで拡大）">
         <div style="flex:1">
           <div style="color:#555">基準画像（eBayのs-l400のURLを貼ると横に表示。Seller Hubでコピーした行の =IMAGE("…") のURL部分でOK）</div>
           <input id="ym-refurl" placeholder="https://i.ebayimg.com/images/g/…/s-l400.jpg" style="width:100%">
@@ -175,7 +194,7 @@
       </div>
       <div id="ym-sum"></div>
       </div>
-      <div id="ym-zoom" style="display:none;position:fixed;right:740px;bottom:16px;background:#fff;border:2px solid #333;border-radius:8px;padding:8px;z-index:100000;box-shadow:0 4px 16px rgba(0,0,0,.3)">
+      <div id="ym-zoom" style="display:none;position:fixed;right:480px;bottom:16px;background:#fff;border:2px solid #333;border-radius:8px;padding:8px;z-index:100000;box-shadow:0 4px 16px rgba(0,0,0,.3)">
         <div style="display:flex;gap:8px">
           <div style="text-align:center"><div>基準（eBay）</div><img id="ym-zoom-ref" style="width:300px;height:400px;object-fit:contain;background:#f4f4f4"></div>
           <div style="text-align:center"><div id="ym-zoom-label">メルカリ</div><img id="ym-zoom-it" style="width:300px;height:400px;object-fit:contain;background:#f4f4f4"></div>
@@ -224,12 +243,12 @@
       const condTxt = r ? (r.sold ? '売り切れ' : r.cond) : '';
       const ok = r && ADOPT.includes(r.cond) && !r.sold;
       const color = it.auction || it.sold ? '#aaa' : (r ? (ok ? '#060' : '#a00') : '#222');
-      return `<div style="display:grid;grid-template-columns:18px 96px 70px 1fr 130px;gap:6px;align-items:center;padding:3px 0;border-top:1px solid #eee;color:${color}">
-        <input type="checkbox" data-i="${i}" ${it.on ? 'checked' : ''} ${it.auction || it.sold ? 'disabled' : ''}>
-        <a href="${it.url}" target="_blank"><img src="${it.img}" data-zoom="${i}" onerror="if(this.dataset.f!=='1'){this.dataset.f='1';this.src=this.src.replace(/w=720/,'w=240');}" style="width:96px;height:128px;object-fit:contain;background:#f4f4f4;border:1px solid #ddd;cursor:zoom-in"></a>
+      return `<div style="display:grid;grid-template-columns:30px 72px 62px 1fr 96px;gap:6px;align-items:center;padding:3px 0;border-top:1px solid #eee;color:${color}">
+        <input type="checkbox" data-i="${i}" ${it.on ? 'checked' : ''} ${it.auction || it.sold ? 'disabled' : ''} style="width:26px;height:26px;cursor:pointer;accent-color:#ff0211">
+        <a href="${it.url}" target="_blank"><img src="${it.img}" data-zoom="${i}" onerror="if(this.dataset.f!=='1'){this.dataset.f='1';this.src=this.src.replace(/w=720/,'w=240');}" style="width:72px;height:96px;object-fit:contain;background:#f4f4f4;border:1px solid #ddd;cursor:zoom-in"></a>
         <span style="text-align:right">${it.auction ? '現在 ' : ''}${yen(it.price)}</span>
-        <a href="${it.url}" target="_blank" style="color:inherit;white-space:normal;line-height:1.3" title="${it.name}">${it.name.slice(0, 70)}</a>
-        <span>${it.auction ? 'オークション' : it.sold ? 'SOLD' : condTxt}</span>
+        <a href="${it.url}" target="_blank" style="color:inherit;white-space:normal;line-height:1.3" title="${it.name}">${it.name.slice(0, 40)}</a>
+        <span style="font-size:11px">${it.auction ? 'オークション' : it.sold ? 'SOLD' : condTxt}</span>
       </div>`;
     }).join('') || '出品が読めません。ページを少しスクロールしてから再読込してください。';
     if (hidden) list.innerHTML += `<div style="color:#888;padding:4px 0">（傷や汚れあり・状態が悪い・売切 ${hidden}件は非表示）</div>`;
@@ -273,11 +292,11 @@
       if (!key) { msg.style.color = '#c00'; msg.textContent = '基準画像の欄に eBay画像URL（シートのN列）を入れてください。その行を探して書き込みます。'; return; }
       const url = $('#ym-api').value.trim(), token = $('#ym-token').value.trim();
       if (!url || !token) { msg.style.color = '#c00'; msg.textContent = 'シートAPI URL と APIトークンを入力してください。'; return; }
-      msg.style.color = '#080'; msg.textContent = 'シートに書き込み中…';
+      msg.style.color = '#080'; msg.textContent = 'シートに書き込み中…'; hideDone('ym');
       GM_xmlhttpRequest({
         method: 'POST', url, headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, timeout: 30000,
         data: JSON.stringify({ token, action: 'fill', key, values: { '実勢価格': best ? best.price : '', '参考ページ': best ? best.url : '', '実勢メモ': '実勢: ' + memo } }),
-        onload: res => { try { const j = JSON.parse(res.responseText); if (j.ok) { msg.textContent = `${j.tab} タブ ${j.row} 行目に書き込みました（${(j.written || []).join('・')}）。`; } else { msg.style.color = '#c00'; msg.textContent = '書き込み失敗: ' + j.error; } } catch (e) { msg.style.color = '#c00'; msg.textContent = '応答が読めません: ' + res.responseText.slice(0, 120); } },
+        onload: res => { try { const j = JSON.parse(res.responseText); if (j.ok) { msg.textContent = `${j.tab} タブ ${j.row} 行目に書き込みました（${(j.written || []).join('・')}）。`; showDone('ym', `シート転記 完了：${j.tab} ${j.row}行目`); } else { msg.style.color = '#c00'; msg.textContent = '書き込み失敗: ' + j.error; } } catch (e) { msg.style.color = '#c00'; msg.textContent = '応答が読めません: ' + res.responseText.slice(0, 120); } },
         onerror: () => { msg.style.color = '#c00'; msg.textContent = '通信エラー'; }, ontimeout: () => { msg.style.color = '#c00'; msg.textContent = 'タイムアウト'; },
       });
     };
@@ -319,7 +338,7 @@
       const n = parseInt($('#ym-n').value, 10) || N_DEFAULT;
       const targets = items.filter(it => it.on).slice(0, n);
       if (!targets.length) { msg.textContent = '対象がありません（チェックの入った行がありません）。'; return; }
-      running = true; abort = false; results = {};
+      running = true; abort = false; results = {}; hideDone('ym');
       $('#ym-run').textContent = '中止';
       targets.forEach(t => GM_setValue('yr_result_' + t.id, null));
       GM_setValue('yr_job', { pending: targets.map(t => t.id), at: Date.now() });
@@ -335,6 +354,7 @@
         render();
       }
       msg.textContent = abort ? '中止しました。' : `完了。${targets.length}件を確認しました。`;
+      if (!abort) showDone('ym', `チェック完了（${targets.length}件）。上のまとめを確認して「シートに書き込む」`);
     } catch (e) {
       msg.style.color = '#c00';
       msg.textContent = 'エラー: ' + (e && e.message ? e.message : e);
