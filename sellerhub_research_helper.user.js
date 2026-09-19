@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.7
+// @version      2.8
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -10,6 +10,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
+// @updateURL    https://raw.githubusercontent.com/affyokko-gh/yoriko-research-tools/main/sellerhub_research_helper.user.js
+// @downloadURL  https://raw.githubusercontent.com/affyokko-gh/yoriko-research-tools/main/sellerhub_research_helper.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -187,7 +189,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v2.7</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v2.8</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -364,7 +366,7 @@
     }
   }
 
-  const VERSION = '2.7';
+  const VERSION = '2.8';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;

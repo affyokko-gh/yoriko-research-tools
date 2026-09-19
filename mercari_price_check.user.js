@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         メルカリ実勢価格チェック（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.4
+// @version      2.5
 // @description  メルカリ検索結果（安い順）から固定価格の出品を安い順に6件ひらき、「商品の状態」を読んで実勢価格の傾向を一覧にする。シートの K実勢価格・L参考ページ・M実勢メモ の3セルを1回でコピーできる
 // @match        https://jp.mercari.com/*
 // @grant        GM_setValue
@@ -13,6 +13,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
+// @updateURL    https://raw.githubusercontent.com/affyokko-gh/yoriko-research-tools/main/mercari_price_check.user.js
+// @downloadURL  https://raw.githubusercontent.com/affyokko-gh/yoriko-research-tools/main/mercari_price_check.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -153,7 +155,7 @@
     p.innerHTML = `
       <div id="ym-head" style="position:sticky;top:0;background:#fff;padding:12px 0 6px;border-bottom:2px solid #333;z-index:2">
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.4</small></b>
+        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.5</small></b>
         <span style="flex:1"></span>
         <label>件数 <input id="ym-n" type="number" value="${N_DEFAULT}" min="1" max="15" style="width:44px"></label>
         <button id="ym-run" style="cursor:pointer;background:#ff0211;color:#fff;border:0;border-radius:4px;padding:4px 10px;font-weight:bold">チェック開始</button>
