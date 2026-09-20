@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         メルカリ実勢価格チェック（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.8
+// @version      2.9
 // @description  メルカリ検索結果（安い順）から固定価格の出品を安い順に6件ひらき、「商品の状態」を読んで実勢価格の傾向を一覧にする。シートの K実勢価格・L参考ページ・M実勢メモ の3セルを1回でコピーできる
 // @match        https://jp.mercari.com/*
 // @grant        GM_setValue
@@ -57,7 +57,8 @@
   }
 
   // ---------- 検索ページ側 ----------
-  if (!location.pathname.startsWith('/search')) return;
+  // メルカリはページ遷移してもスクリプトが再実行されないので、検索ページかどうかは毎回判定する
+  const onSearch = () => location.pathname.startsWith('/search');
 
   function collect() {
     const seen = new Set(), out = [];
@@ -111,7 +112,9 @@
     });
     // 位置の復元
     const pos = GM_getValue(prefix + '_pos', null);
-    if (pos && pos.left >= 0 && pos.top >= 0) { panel.style.left = pos.left + 'px'; panel.style.top = pos.top + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto'; }
+    if (pos && pos.left >= 0 && pos.top >= 0 && pos.left < window.innerWidth - 120 && pos.top < window.innerHeight - 60) {
+      panel.style.left = pos.left + 'px'; panel.style.top = pos.top + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    } else if (pos) { GM_setValue(prefix + '_pos', null); }   // 画面外に保存されていたら初期位置に戻す
     // ドラッグ
     let drag = null;
     bar.addEventListener('mousedown', e => {
@@ -179,7 +182,7 @@
     p.innerHTML = `
       <div id="ym-head" style="position:sticky;top:0;background:#fff;padding:12px 0 6px;border-bottom:2px solid #333;z-index:2">
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.8</small></b>
+        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.9</small></b>
         <span style="flex:1"></span>
         <label>件数 <input id="ym-n" type="number" value="${N_DEFAULT}" min="1" max="15" style="width:44px"></label>
         <button id="ym-run" style="cursor:pointer;background:#ff0211;color:#fff;border:0;border-radius:4px;padding:4px 10px;font-weight:bold">チェック開始</button>
@@ -372,7 +375,9 @@
   }
 
   function addLauncher() {
-    if ($('#ym-launch')) return;
+    const ex = $('#ym-launch');
+    if (!onSearch()) { if (ex) ex.remove(); return; }
+    if (ex) return;
     const b = document.createElement('button');
     b.id = 'ym-launch';
     b.textContent = '実勢チェック';

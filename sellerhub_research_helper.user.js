@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.9
+// @version      3.0
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -145,7 +145,9 @@
     });
     // 位置の復元
     const pos = GM_getValue(prefix + '_pos', null);
-    if (pos && pos.left >= 0 && pos.top >= 0) { panel.style.left = pos.left + 'px'; panel.style.top = pos.top + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto'; }
+    if (pos && pos.left >= 0 && pos.top >= 0 && pos.left < window.innerWidth - 120 && pos.top < window.innerHeight - 60) {
+      panel.style.left = pos.left + 'px'; panel.style.top = pos.top + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    } else if (pos) { GM_setValue(prefix + '_pos', null); }   // 画面外に保存されていたら初期位置に戻す
     // ドラッグ
     let drag = null;
     bar.addEventListener('mousedown', e => {
@@ -208,7 +210,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v2.9</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.0</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -387,7 +389,7 @@
     }
   }
 
-  const VERSION = '2.9';
+  const VERSION = '3.0';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;
