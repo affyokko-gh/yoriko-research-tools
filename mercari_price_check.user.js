@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         メルカリ実勢価格チェック（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      2.9
+// @version      3.0
 // @description  メルカリ検索結果（安い順）から固定価格の出品を安い順に6件ひらき、「商品の状態」を読んで実勢価格の傾向を一覧にする。シートの K実勢価格・L参考ページ・M実勢メモ の3セルを1回でコピーできる
 // @match        https://jp.mercari.com/*
 // @grant        GM_setValue
@@ -180,9 +180,9 @@
     p.id = 'ym-panel';
     p.style.cssText = 'position:fixed;right:16px;bottom:16px;width:440px;max-height:60vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:0 12px 12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3);color:#222';
     p.innerHTML = `
-      <div id="ym-head" style="position:sticky;top:0;background:#fff;padding:12px 0 6px;border-bottom:2px solid #333;z-index:2">
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v2.9</small></b>
+      <div id="ym-head" style="position:sticky;top:0;background:#fff;padding:6px 0 4px;border-bottom:2px solid #333;z-index:2">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v3.0</small></b>
         <span style="flex:1"></span>
         <label>件数 <input id="ym-n" type="number" value="${N_DEFAULT}" min="1" max="15" style="width:44px"></label>
         <button id="ym-run" style="cursor:pointer;background:#ff0211;color:#fff;border:0;border-radius:4px;padding:4px 10px;font-weight:bold">チェック開始</button>
@@ -192,15 +192,13 @@
         <button id="ym-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
         <button id="ym-close" style="cursor:pointer">×</button>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-        <img id="ym-ref" style="width:90px;height:120px;object-fit:contain;border:1px dashed #999;background:#f4f4f4;cursor:zoom-in" title="比較用の基準画像（クリックで拡大）">
-        <div style="flex:1">
-          <div style="color:#555">基準画像（eBayのs-l400のURLを貼ると横に表示。Seller Hubでコピーした行の =IMAGE("…") のURL部分でOK）</div>
-          <input id="ym-refurl" placeholder="https://i.ebayimg.com/images/g/…/s-l400.jpg" style="width:100%">
-          <div style="color:#555">最初は全部チェックなしです。写真を見て同じカードだけチェックを入れてから「チェック開始」（1件でも6件でも可）。サムネイルにマウスを乗せると基準画像と並べて大きく表示します。結果が出た後もチェックを外せば集計から抜けます。</div>
-        </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+        <img id="ym-ref" style="width:48px;height:64px;object-fit:contain;border:1px dashed #999;background:#f4f4f4;cursor:zoom-in" title="基準画像（クリックで拡大表示を固定）">
+        <input id="ym-refurl" placeholder="基準画像：シートのN列（eBay画像URL）を貼る" style="flex:1;font-size:11px">
+        <button id="ym-help" title="使い方" style="cursor:pointer">?</button>
       </div>
-      <div id="ym-msg" style="min-height:1.2em;color:#080;font-weight:bold"></div>
+      <div id="ym-helptext" style="display:none;color:#555;font-size:11px;margin-bottom:4px">最初は全部チェックなし。写真を見て同じカードだけチェック →「チェック開始」（1件でも6件でも可）。サムネイルにマウスを乗せると基準画像と並べて拡大表示。結果が出た後もチェックを外せば集計から抜けます。</div>
+      <div id="ym-msg" style="min-height:0;color:#080;font-weight:bold;font-size:11px"></div>
       <div id="ym-sum"></div>
       </div>
       <div id="ym-zoom" style="display:none;position:fixed;right:480px;bottom:16px;background:#fff;border:2px solid #333;border-radius:8px;padding:8px;z-index:100000;box-shadow:0 4px 16px rgba(0,0,0,.3)">
@@ -225,6 +223,7 @@
     $('#ym-reload').onclick = () => { items = collect(); results = {}; render(); };
     $('#ym-run').onclick = run;
     $('#ym-api').value = GM_getValue('yr_api', ''); $('#ym-token').value = GM_getValue('yr_token', '');
+    $('#ym-help').onclick = () => { const d = $('#ym-helptext'); d.style.display = d.style.display === 'none' ? 'block' : 'none'; };
     $('#ym-gear').onclick = () => { const d = $('#ym-settings'); d.style.display = d.style.display === 'none' ? 'block' : 'none'; };
     $('#ym-test').onclick = () => {
       const url = $('#ym-api').value.trim(), out = $('#ym-testmsg');
@@ -280,17 +279,16 @@
     const good = adopted.find(d => d.cond !== 'やや傷や汚れあり');
     const memo = adopted.map(d => `${yen(d.price)}(${d.sold ? '売切' : d.cond.replace('目立った傷や汚れなし', '目立った傷なし').replace('やや傷や汚れあり', 'やや傷').replace('傷や汚れあり', '傷あり').replace('全体的に状態が悪い', '状態悪')})`).join('/');
     box.innerHTML = `
-      <div style="border:1px solid #ccc;border-radius:6px;padding:8px;background:#fafafa">
-        <div><b>実勢最安（やや傷まで）:</b> ${best ? yen(best.price) + '（' + best.cond + '）' : 'なし'}
-          ${good && good !== best ? `　<b>目立った傷なし以上の最安:</b> ${yen(good.price)}` : ''}</div>
-        <div style="margin:4px 0;color:#444">実勢: ${memo}</div>
-        ${best ? '' : '<div style="color:#a00">採用できる状態（やや傷まで）の出品がありません。別の出品にチェックを入れて再チェックしてください。</div>'}
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <button id="ym-write" style="cursor:pointer;background:#3665f3;color:#fff;border:0;border-radius:4px;padding:4px 10px;font-weight:bold">シートに書き込む（基準画像URLの行）</button>
-          <button id="ym-cp-all" style="cursor:pointer">K〜M列をコピー</button>
-          <span style="color:#666">うまく貼れないときは下の欄を全選択してコピー</span>
+      <div style="border:1px solid #ccc;border-radius:6px;padding:4px 8px;background:#fafafa;font-size:11px">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <b>実勢最安:</b> ${best ? '<b style="font-size:14px">' + yen(best.price) + '</b>（' + best.cond + '）' : '<span style="color:#a00">なし（やや傷までの出品がありません）</span>'}
+          ${good && good !== best ? `<span>目立った傷なし以上: ${yen(good.price)}</span>` : ''}
+          <span style="flex:1"></span>
+          <button id="ym-write" style="cursor:pointer;background:#3665f3;color:#fff;border:0;border-radius:4px;padding:3px 10px;font-weight:bold">シートに書き込む</button>
+          <button id="ym-cp-all" style="cursor:pointer" title="K〜M列をコピー（うまく貼れないときは下の欄を全選択してコピー）">コピー</button>
         </div>
-        <textarea id="ym-tsv" readonly style="width:100%;height:3em;margin-top:4px;font:11px monospace"></textarea>
+        <div style="color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${memo}">実勢: ${memo}</div>
+        <textarea id="ym-tsv" readonly style="width:100%;height:1.6em;font:10px monospace;display:none"></textarea>
       </div>`;
     const tsv = [best ? best.price : '', best ? best.url : '', '実勢: ' + memo].join('\t');
     $('#ym-tsv').value = tsv;
@@ -314,7 +312,7 @@
       try { GM_setClipboard(tsv, { type: 'text', mimetype: 'text/plain' }); ok = true; } catch (e) { console.warn('GM_setClipboard', e); }
       if (!ok) { try { GM_setClipboard(tsv, 'text'); ok = true; } catch (e) {} }
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tsv).then(() => { ok = true; }).catch(() => {});
-      const ta = $('#ym-tsv'); ta.focus(); ta.select();
+      const ta = $('#ym-tsv'); ta.style.display = 'block'; ta.focus(); ta.select();
       try { if (document.execCommand('copy')) ok = true; } catch (e) {}
       msg.style.color = ok ? '#080' : '#c00';
       msg.textContent = ok ? 'K〜M列の3セルをコピーしました。シートの K セル（実勢価格）を1つ選んで貼り付け。' : 'コピーできませんでした。下の欄を全選択して Ctrl+C してください。';
