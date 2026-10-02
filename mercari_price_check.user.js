@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         メルカリ実勢価格チェック（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      3.0
+// @version      3.1
 // @description  メルカリ検索結果（安い順）から固定価格の出品を安い順に6件ひらき、「商品の状態」を読んで実勢価格の傾向を一覧にする。シートの K実勢価格・L参考ページ・M実勢メモ の3セルを1回でコピーできる
 // @match        https://jp.mercari.com/*
 // @grant        GM_setValue
@@ -89,6 +89,21 @@
     });
     return out.sort((a, b) => a.price - b.price);
   }
+
+  // 商品名から収録を推定してバッジにする（上から順に最初に当たったもの）
+  const SETS = [
+    ['コロコロ', /コロコロ|corocoro|付録/i, '#b35c00'],
+    ['拡張シート', /拡張シート|自販機|vending|ベンディング/i, '#0b6'],
+    ['カードダス', /カードダス|carddass|バンダイ|アマダ|トップサン|topsun/i, '#666'],
+    ['ジャングル', /ジャングル|jungle/i, '#396'],
+    ['化石', /化石|fossil/i, '#963'],
+    ['ロケット団', /ロケット団|rocket|わるい/i, '#a33'],
+    ['ジム', /ジム|gym|リーダー/i, '#639'],
+    ['neo', /neo|ネオ|金銀|プレミアムファイル/i, '#369'],
+    ['PSA等', /PSA|BGS|CGC|ARS|鑑定/i, '#c00'],
+    ['セット', /セット|まとめ|\d+枚|set\b/i, '#999'],
+  ];
+  const setOf = name => { for (const [n, re, c] of SETS) if (re.test(name)) return { n, c }; return null; };
 
   let items = [], results = {}, running = false;
 
@@ -182,7 +197,7 @@
     p.innerHTML = `
       <div id="ym-head" style="position:sticky;top:0;background:#fff;padding:6px 0 4px;border-bottom:2px solid #333;z-index:2">
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
-        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v3.0</small></b>
+        <b style="font-size:14px">実勢価格チェック <small style="color:#888">v3.1</small></b>
         <span style="flex:1"></span>
         <label>件数 <input id="ym-n" type="number" value="${N_DEFAULT}" min="1" max="15" style="width:44px"></label>
         <button id="ym-run" style="cursor:pointer;background:#ff0211;color:#fff;border:0;border-radius:4px;padding:4px 10px;font-weight:bold">チェック開始</button>
@@ -254,7 +269,7 @@
         <input type="checkbox" data-i="${i}" ${it.on ? 'checked' : ''} ${it.auction || it.sold ? 'disabled' : ''} style="width:26px;height:26px;cursor:pointer;accent-color:#ff0211">
         <a href="${it.url}" target="_blank"><img src="${it.img}" data-zoom="${i}" onerror="if(this.dataset.f!=='1'){this.dataset.f='1';this.src=this.src.replace(/w=720/,'w=240');}" style="width:72px;height:96px;object-fit:contain;background:#f4f4f4;border:1px solid #ddd;cursor:zoom-in"></a>
         <span style="text-align:right">${it.auction ? '現在 ' : ''}${yen(it.price)}</span>
-        <a href="${it.url}" target="_blank" style="color:inherit;white-space:normal;line-height:1.3" title="${it.name}">${it.name.slice(0, 40)}</a>
+        <a href="${it.url}" target="_blank" style="color:inherit;white-space:normal;line-height:1.3" title="${it.name}">${(sb => sb ? `<span style="display:inline-block;background:${sb.c};color:#fff;border-radius:3px;padding:0 4px;font-size:10px;margin-right:3px">${sb.n}</span>` : '')(setOf(it.name))}${it.name.slice(0, 40)}</a>
         <span style="font-size:11px">${it.auction ? 'オークション' : it.sold ? 'SOLD' : condTxt}</span>
       </div>`;
     }).join('') || '出品が読めません。ページを少しスクロールしてから再読込してください。';
