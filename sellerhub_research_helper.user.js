@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      3.0
+// @version      3.2
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -33,13 +33,15 @@
     // 「複数枚」の判定は、数量を伴う語だけにする（"Gift Set" のような弾名は除外しない）
     ['除外：ロット・セット', /\blot\b|set of \d|\d+\s?-?\s?(card\s)?sets?\b|\bsets\b|\bx\s?\d+\b|\d+\s?x\b|\d+\s?(pcs|cards?)\b|bulk|complete|choose|sealed|unpeeled|\bpair\b/i, false, ''],
     ['カードダス・アマダ等', /carddass|bandai|topsun|amada|prism|sticker|seal|menko|\bpp\b/i, true, 'カードダス'],
+    // コロコロ付録プロモは拡張シートと同じ光沢仕様なので、拡張シートより先に判定する
+    ['コロコロプロモ',    /coro\s?coro|corocoro|コロコロ|comic promo|magazine promo/i, true, 'コロコロコミック付録プロモ'],
     ['拡張シート',        /vending|expansion sheet|glossy/i, true, '拡張シート'],
     ['ジム',              /gym|sabrina|misty|erika|brock|blaine|koga|surge|giovanni|rocket's|leaders|challenge/i, true, 'ポケモンジム'],
     ['ロケット団',        /rocket|dark\b/i, true, '第4弾拡張パック ロケット団'],
     ['ジャングル',        /jungle/i, true, '第2弾拡張パック ポケモンジャングル'],
     ['化石',              /fossil/i, true, '第3弾拡張パック 化石の秘密'],
     ['Neo',               /\bneo\b|genesis|discovery|revelation|destiny|premium file/i, true, 'neo'],
-    ['プロモ',            /promo|corocoro|coro|intro|fan club|\bana\b|trainers|wizards|stamp rally|world hobby/i, true, 'プロモ'],
+    ['プロモ',            /promo|intro|fan club|\bana\b|trainers|wizards|stamp rally|world hobby/i, true, 'プロモ'],
     ['第1弾（ベース）',   /base set|1st|expansion pack|starter|1996/i, true, '第1弾拡張パック'],
     ['その他・不明',      /./, true, ''],
   ];
@@ -98,6 +100,24 @@
       const g = GROUPS.findIndex(([, re]) => re.test(l[0]));
       rows.push({ title: l[0], price, ship, free, sold, total, group: g, nm: /\bNM\b|near mint/i.test(l[0]) });
     }
+    if (rows.length) return rows;
+    // 予備：表の行（tr）から直接読む（eBay側で画像の説明文が変わった場合に備える）
+    document.querySelectorAll('tr').forEach(tr => {
+      const l = tr.innerText.split('\n').map(x => x.trim()).filter(Boolean);
+      const i = l.findIndex(x => /^\$\d/.test(x));
+      if (i < 1) return;
+      const title = l.slice(0, i).sort((a, b) => b.length - a.length)[0];
+      if (!title || title.length < 8) return;
+      const price = parseFloat(l[i].replace(/[$,]/g, ''));
+      const shipTxt = l.slice(i + 1, i + 4).find(x => /^\$\d/.test(x));
+      const ship = shipTxt ? parseFloat(shipTxt.replace(/[$,]/g, '')) : 0;
+      const freeTxt = l.slice(i + 1, i + 5).find(x => /Free shipping/i.test(x)) || '0%';
+      const free = parseInt((freeTxt.match(/\d+/) || ['0'])[0], 10);
+      const soldTxt = l.slice(i + 1).find(x => /^\d+$/.test(x));
+      const sold = soldTxt ? parseInt(soldTxt, 10) : 1;
+      const total = +(price + ship * (1 - free / 100)).toFixed(2);
+      rows.push({ title, price, ship, free, sold, total, group: GROUPS.findIndex(([, re]) => re.test(title)), nm: /\bNM\b|near mint/i.test(title) });
+    });
     return rows;
   }
 
@@ -210,7 +230,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.0</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.2</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -265,7 +285,13 @@
     // 日本語名は「英語KW」だけから推定する（タイトルまで見るとロット等に含まれる別キャラを拾ってしまう）
     const g = guessCard($('#yr-kw').value);
     if (!$('#yr-jp').value.trim()) $('#yr-jp').value = [g.jp, g.num ? String(g.num).padStart(3, '0') : ''].filter(Boolean).join(' ');
-    if (!rows.length) { $('#yr-msg').textContent = '結果表が読めません。ページの読み込みを待ってから再読込してください。'; }
+    if (!rows.length) {
+      const hasTable = /Avg sold price|Total sold|Date last sold/i.test(document.body.innerText);
+      $('#yr-msg').style.color = '#c00';
+      $('#yr-msg').textContent = hasTable
+        ? '結果表はありますが読み取れませんでした。「Sold」タブで、表が全部表示されてから「再読込」を押してください。'
+        : 'このページに結果表がありません。Seller Hub の Research（Product research）で検索し、「Sold」の結果が出た状態で「再読込」を押してください。';
+    } else { $('#yr-msg').style.color = '#080'; }
     render();
     if (rows.length) { hideDone('yr'); const n = new Set(rows.map(r => r.group)).size; showDone('yr', `集計 完了：${rows.length}件を${n}グループに仕分けました。収録の「シートに書き込む」へ`); }
   }
@@ -389,7 +415,7 @@
     }
   }
 
-  const VERSION = '3.0';
+  const VERSION = '3.2';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;
