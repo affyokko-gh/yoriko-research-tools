@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      3.2
+// @version      3.5
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -88,14 +88,17 @@
     const rows = [];
     for (const p of parts) {
       const l = p.split('\n').map(s => s.trim()).filter(Boolean);
-      const i = l.findIndex(s => /^\$\d/.test(s));
+      // 価格の記号は $ のほか ¥ で表示されることがある（表示通貨の設定によるが、値は USD のまま）
+      const i = l.findIndex(s => /^[$¥€£]\s?\d/.test(s));
       if (i < 0) continue;
-      const price = parseFloat(l[i].replace(/[$,]/g, ''));
-      const shipTxt = l.slice(i + 1, i + 4).find(s => /^\$\d/.test(s));
-      const ship = shipTxt ? parseFloat(shipTxt.replace(/[$,]/g, '')) : 0;
+      const num = x => parseFloat(x.replace(/[^\d.]/g, ''));
+      const price = num(l[i]);
+      const shipTxt = l.slice(i + 1, i + 4).find(s => /^[$¥€£]\s?\d/.test(s));
+      const ship = shipTxt ? num(shipTxt) : 0;
       const freeTxt = l.slice(i + 1, i + 5).find(s => /Free shipping/.test(s)) || '0%';
       const free = parseInt((freeTxt.match(/\d+/) || ['0'])[0], 10);
-      const sold = parseInt(l[i + 4], 10) || 1;
+      const soldTxt = l.slice(i + 1, i + 7).find(s => /^\d+$/.test(s));
+      const sold = soldTxt ? parseInt(soldTxt, 10) : 1;
       const total = +(price + ship * (1 - free / 100)).toFixed(2);
       const g = GROUPS.findIndex(([, re]) => re.test(l[0]));
       rows.push({ title: l[0], price, ship, free, sold, total, group: g, nm: /\bNM\b|near mint/i.test(l[0]) });
@@ -104,13 +107,14 @@
     // 予備：表の行（tr）から直接読む（eBay側で画像の説明文が変わった場合に備える）
     document.querySelectorAll('tr').forEach(tr => {
       const l = tr.innerText.split('\n').map(x => x.trim()).filter(Boolean);
-      const i = l.findIndex(x => /^\$\d/.test(x));
+      const i = l.findIndex(x => /^[$¥€£]\s?\d/.test(x));
       if (i < 1) return;
       const title = l.slice(0, i).sort((a, b) => b.length - a.length)[0];
       if (!title || title.length < 8) return;
-      const price = parseFloat(l[i].replace(/[$,]/g, ''));
-      const shipTxt = l.slice(i + 1, i + 4).find(x => /^\$\d/.test(x));
-      const ship = shipTxt ? parseFloat(shipTxt.replace(/[$,]/g, '')) : 0;
+      const num = x => parseFloat(x.replace(/[^\d.]/g, ''));
+      const price = num(l[i]);
+      const shipTxt = l.slice(i + 1, i + 4).find(x => /^[$¥€£]\s?\d/.test(x));
+      const ship = shipTxt ? num(shipTxt) : 0;
       const freeTxt = l.slice(i + 1, i + 5).find(x => /Free shipping/i.test(x)) || '0%';
       const free = parseInt((freeTxt.match(/\d+/) || ['0'])[0], 10);
       const soldTxt = l.slice(i + 1).find(x => /^\d+$/.test(x));
@@ -121,9 +125,21 @@
     return rows;
   }
 
+  // 行ごとの画像：画像要素から行の入れ物をたどり、その行の文字にタイトル全文が含まれるものを選ぶ（先頭だけの一致だと別の出品を拾う）
   function imageFor(title) {
-    const img = [...document.querySelectorAll('img')].find(i => i.src.includes('ebayimg') && i.alt && title.startsWith(i.alt.slice(0, 40)));
-    return img ? img.src.replace(/s-l\d+\./, 's-l400.') : '';
+    const imgs = [...document.querySelectorAll('img')].filter(i => i.src.includes('ebayimg'));
+    const norm = x => x.replace(/\s+/g, ' ').trim();
+    const t = norm(title);
+    for (const img of imgs) {
+      let box = img;
+      for (let k = 0; k < 8 && box.parentElement; k++) {
+        box = box.parentElement;
+        const txt = norm(box.innerText || '');
+        if (txt.includes(t)) { return (txt.length < t.length + 400) ? img.src.replace(/s-l\d+\./, 's-l400.') : ''; }
+      }
+    }
+    const alt = imgs.find(i => i.alt && norm(i.alt) === t) || imgs.find(i => i.alt && t.startsWith(norm(i.alt).slice(0, 60)));
+    return alt ? alt.src.replace(/s-l\d+\./, 's-l400.') : '';
   }
 
   function median(arr) {
@@ -230,7 +246,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.2</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.5</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -250,7 +266,8 @@
         </div>
         <button id="yr-test" style="cursor:pointer;margin-top:4px">接続テスト</button> <span id="yr-testmsg"></span>
       </div>
-      <div style="margin-bottom:6px;color:#555">各行の収録は右端のプルダウンで直せます。チェックを外した行は集計から除きます。D列は「日本語名 + 収録名 + 旧裏」で入ります。貼り付けは A〜N の14列（N = eBay画像URL）。</div>
+      <div style="margin-bottom:6px;color:#555">左の○（ラジオ）でシートに使う画像の出品を選べます（未選択なら集計に入れた最初の行）。各行の収録は右端のプルダウンで直せます。チェックを外した行は集計から除きます。D列は「日本語名 + 収録名 + 旧裏」で入ります。貼り付けは A〜N の14列（N = eBay画像URL）。</div>
+      <div id="yr-warn" style="color:#b35c00;font-weight:bold"></div>
       <div id="yr-msg" style="color:#080;min-height:1.2em"></div>
       <div id="yr-preview" style="margin:4px 0"></div>
       <div id="yr-groups"></div>`;
@@ -285,12 +302,31 @@
     // 日本語名は「英語KW」だけから推定する（タイトルまで見るとロット等に含まれる別キャラを拾ってしまう）
     const g = guessCard($('#yr-kw').value);
     if (!$('#yr-jp').value.trim()) $('#yr-jp').value = [g.jp, g.num ? String(g.num).padStart(3, '0') : ''].filter(Boolean).join(' ');
+    // URLの絞り込み条件を確認（アカウントに保存された条件が勝手に付くことがある）
+    const q = new URLSearchParams(location.search);
+    const warn = [];
+    if (q.get('dayRange') && q.get('dayRange') !== '30') warn.push(`期間が${q.get('dayRange')}日`);
+    if (q.get('minPrice') && parseFloat(q.get('minPrice')) > 0) warn.push(`価格下限 $${q.get('minPrice')}`);
+    if (q.getAll('format').length) warn.push('販売形式の絞り込みあり');
+    if (q.get('conditionIds')) warn.push('コンディションの絞り込みあり');
+    const wb = $('#yr-warn'); if (wb) wb.textContent = warn.length ? '⚠ 絞り込み: ' + warn.join('・') + '（基準は 30日・下限$0・絞り込みなし。表の上の Reset で解除）' : '';
     if (!rows.length) {
       const hasTable = /Avg sold price|Total sold|Date last sold/i.test(document.body.innerText);
       $('#yr-msg').style.color = '#c00';
       $('#yr-msg').textContent = hasTable
         ? '結果表はありますが読み取れませんでした。「Sold」タブで、表が全部表示されてから「再読込」を押してください。'
         : 'このページに結果表がありません。Seller Hub の Research（Product research）で検索し、「Sold」の結果が出た状態で「再読込」を押してください。';
+      $('#yr-msg').insertAdjacentHTML('beforeend', ' <button id="yr-diag" style="cursor:pointer">診断情報をコピー</button>');
+      $('#yr-diag').onclick = () => {
+        // 表の構造を調べるための情報（タイトル・価格が入っている要素のHTMLと本文の一部）をコピーする
+        const t = document.body.innerText; const k = Math.max(0, t.indexOf('Reset'));
+        const priceEl = [...document.querySelectorAll('span,div,td')].find(e => e.children.length === 0 && /^\$\d[\d,.]*$/.test(e.textContent.trim()));
+        let box = priceEl; for (let i = 0; i < 6 && box && box.parentElement; i++) box = box.parentElement;
+        const html = box ? box.outerHTML.replace(/\s+/g, ' ').slice(0, 6000) : '(価格要素が見つからず)';
+        const diag = `URL: ${location.href}\nVER: ${VERSION}\nTEXT:\n${t.slice(k, k + 2500)}\n\nHTML:\n${html}`;
+        GM_setClipboard(diag, { type: 'text', mimetype: 'text/plain' });
+        $('#yr-msg').textContent = '診断情報をコピーしました。チャットに貼り付けてください。';
+      };
     } else { $('#yr-msg').style.color = '#080'; }
     render();
     if (rows.length) { hideDone('yr'); const n = new Set(rows.map(r => r.group)).size; showDone('yr', `集計 完了：${rows.length}件を${n}グループに仕分けました。収録の「シートに書き込む」へ`); }
@@ -318,8 +354,11 @@
           </div>
           ${rs.map(r => {
             const i = rows.indexOf(r);
-            return `<div style="display:grid;grid-template-columns:24px 1fr 70px 36px 130px;gap:4px;padding:2px 0;border-top:1px solid #eee;${r.on ? '' : 'color:#aaa'}">
+            const im = r.img || (r.img = imageFor(r.title));
+            return `<div style="display:grid;grid-template-columns:24px 24px 36px 1fr 70px 36px 130px;gap:4px;align-items:center;padding:2px 0;border-top:1px solid #eee;${r.on ? '' : 'color:#aaa'}">
               <input type="checkbox" data-i="${i}" ${r.on ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer">
+              <input type="radio" name="yr-img-${gi}" data-img="${i}" ${r.pick ? 'checked' : ''} title="この出品の画像をシートに使う" style="width:18px;height:18px;cursor:pointer">
+              ${im ? `<img src="${im}" style="width:36px;height:36px;object-fit:contain;background:#f4f4f4;border:1px solid #ddd">` : '<span></span>'}
               <span title="${r.title}">${r.title.slice(0, 64)}</span>
               <span style="text-align:right">$${r.total}${r.ship && r.free < 100 ? '<small>(送' + r.ship + ')</small>' : ''}</span>
               <span style="text-align:right">×${r.sold}</span>
@@ -329,6 +368,9 @@
     });
     box.innerHTML = html || '結果なし';
     box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = e => { rows[+e.target.dataset.i].on = e.target.checked; render(); });
+    box.querySelectorAll('input[type=radio][data-img]').forEach(rb => rb.onchange = e => {
+      const r = rows[+e.target.dataset.img]; rows.filter(x => x.group === r.group).forEach(x => x.pick = false); r.pick = true;
+    });
     box.querySelectorAll('select').forEach(se => se.onchange = e => {
       const r = rows[+e.target.dataset.g]; r.group = +e.target.value; r.on = GROUPS[r.group][2]; render();
     });
@@ -351,7 +393,8 @@
       : [$('#yr-jp').value.trim(), det.lv, det.hp, setName, '旧裏', det.rar].filter(Boolean).join(' ');
     const d = new Date();
     const date = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-    const img = imageFor(sel[0].title);
+    const pickRow = sel.find(r => r.pick) || sel.find(r => r.img || imageFor(r.title)) || sel[0];
+    const img = pickRow.img || imageFor(pickRow.title);
     const imgCell = img ? `=IMAGE("${img}")` : '';
     const detail = sel.map(r => `$${r.total}${r.sold > 1 ? '×' + r.sold : ''}${r.nm ? '(NM)' : ''}`).join('/');
     const extra = [det.lv, det.hp, det.rar].filter(Boolean).join(' ');
@@ -415,7 +458,7 @@
     }
   }
 
-  const VERSION = '3.2';
+  const VERSION = '3.5';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;
