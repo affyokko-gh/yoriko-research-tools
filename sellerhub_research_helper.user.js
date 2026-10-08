@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      3.5
+// @version      3.6
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -127,19 +127,25 @@
 
   // 行ごとの画像：画像要素から行の入れ物をたどり、その行の文字にタイトル全文が含まれるものを選ぶ（先頭だけの一致だと別の出品を拾う）
   function imageFor(title) {
-    const imgs = [...document.querySelectorAll('img')].filter(i => i.src.includes('ebayimg'));
-    const norm = x => x.replace(/\s+/g, ' ').trim();
+    const imgs = [...document.querySelectorAll('img')].filter(i => (i.currentSrc || i.src || '').includes('ebayimg'));
+    const norm = x => (x || '').replace(/,?\s*preview full size image/i, '').replace(/\s+/g, ' ').trim();
     const t = norm(title);
+    const src = img => (img.currentSrc || img.src).replace(/s-l\d+\./, 's-l400.');
+    // 1) alt がタイトルと一致（末尾の "preview full size image" は除いて比較）
+    let hit = imgs.find(i => norm(i.alt) === t);
+    if (hit) return src(hit);
+    // 2) 画像から行の入れ物をたどり、その行の文字にタイトル全文が含まれるもの（表全体に当たったら無効）
     for (const img of imgs) {
       let box = img;
-      for (let k = 0; k < 8 && box.parentElement; k++) {
+      for (let k = 0; k < 12 && box.parentElement; k++) {
         box = box.parentElement;
         const txt = norm(box.innerText || '');
-        if (txt.includes(t)) { return (txt.length < t.length + 400) ? img.src.replace(/s-l\d+\./, 's-l400.') : ''; }
+        if (txt.includes(t)) { if (txt.length < t.length + 1500) return src(img); break; }
       }
     }
-    const alt = imgs.find(i => i.alt && norm(i.alt) === t) || imgs.find(i => i.alt && t.startsWith(norm(i.alt).slice(0, 60)));
-    return alt ? alt.src.replace(/s-l\d+\./, 's-l400.') : '';
+    // 3) 先頭の一致（短い方の長さで比較）
+    hit = imgs.find(i => { const a = norm(i.alt); const n = Math.min(a.length, t.length, 50); return n >= 20 && a.slice(0, n) === t.slice(0, n); });
+    return hit ? src(hit) : '';
   }
 
   function median(arr) {
@@ -246,7 +252,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.5</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.6</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -458,7 +464,7 @@
     }
   }
 
-  const VERSION = '3.5';
+  const VERSION = '3.6';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;
