@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      3.6
+// @version      3.7
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -252,7 +252,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.6</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.7</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -412,14 +412,16 @@
     const cols = ($('#yr-cols').value || COLS_DEFAULT).split(/[,、，]/).map(c => c.trim());
     const cells = cols.map(c => (c in vals ? vals[c] : ''));
     const tsv = cells.join('\t');
-    return { tsv, cells, cols, vals, group: GROUPS[gi][0] };
+    return { tsv, cells, cols, vals, group: GROUPS[gi][0], pickTitle: pickRow.title };
   }
 
   function showPreview(r) {
     const { cells, cols, vals } = r;
     // 貼り付け前に確認できるよう、列と値の対応を表示
     const letters = i => { let n = i + 1, t = ''; while (n) { t = String.fromCharCode(64 + ((n - 1) % 26) + 1) + t; n = Math.floor((n - 1) / 26); } return t; };
-    $('#yr-preview').innerHTML = '<table style="border-collapse:collapse;font-size:11px">' + cols.map((c, i) =>
+    const imgUrl = vals['eBay画像URL'];
+    $('#yr-preview').innerHTML = (imgUrl ? `<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><img src="${imgUrl}" style="width:72px;height:96px;object-fit:contain;border:1px solid #ddd;background:#f4f4f4"><div style="font-size:11px;color:#555">シートに入る画像（この出品: ${String(r.pickTitle || '').slice(0, 60)}）<br>違う場合は、その収録の行の左の○で別の出品を選んでからもう一度押す</div></div>` : '<div style="color:#c00">画像が見つかりませんでした（○で出品を選ぶと使えることがあります）</div>') +
+      '<table style="border-collapse:collapse;font-size:11px">' + cols.map((c, i) =>
       `<tr><td style="border:1px solid #ddd;padding:1px 4px;color:#888">${letters(i)}</td><td style="border:1px solid #ddd;padding:1px 4px">${c}${c in vals ? '' : ' <span style="color:#c00">(不明な列名→空)</span>'}</td><td style="border:1px solid #ddd;padding:1px 4px;max-width:360px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${String(cells[i]).slice(0, 60)}</td></tr>`).join('') + '</table>';
   }
 
@@ -464,7 +466,7 @@
     }
   }
 
-  const VERSION = '3.6';
+  const VERSION = '3.7';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;
