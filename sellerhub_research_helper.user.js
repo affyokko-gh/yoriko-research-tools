@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seller Hub リサーチ集計（旧裏ポケカ）
 // @namespace    yoriko.research
-// @version      3.7
+// @version      3.8
 // @description  Seller Hub Research の結果表を収録（拡張シート・ジャングル・ロケット団・カードダス等）ごとに自動仕分けし、送料込み総額の中央値・上限仕入れ値を計算してシート用の1行をコピーする
 // @match        https://www.ebay.com/sh/research*
 // @grant        GM_setClipboard
@@ -252,7 +252,7 @@
     panel.style.cssText = 'position:fixed;right:16px;bottom:16px;width:600px;max-height:85vh;overflow:auto;background:#fff;border:2px solid #333;border-radius:8px;padding:12px;font:12px/1.5 sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';
     panel.innerHTML = `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.7</small></b>
+        <b style="font-size:14px">リサーチ集計（収録別） <small style="color:#888">v3.8</small></b>
         <span style="flex:1"></span>
         <button id="yr-rerun" style="cursor:pointer">再読込</button>
         <button id="yr-gear" title="シートAPIの設定" style="cursor:pointer">⚙</button>
@@ -311,11 +311,14 @@
     // URLの絞り込み条件を確認（アカウントに保存された条件が勝手に付くことがある）
     const q = new URLSearchParams(location.search);
     const warn = [];
+    // 基準: 30日・日本セラー・$30以上・固定価格/ベストオファー。期間とコンディションの絞り込みだけ注意を出す
     if (q.get('dayRange') && q.get('dayRange') !== '30') warn.push(`期間が${q.get('dayRange')}日`);
-    if (q.get('minPrice') && parseFloat(q.get('minPrice')) > 0) warn.push(`価格下限 $${q.get('minPrice')}`);
-    if (q.getAll('format').length) warn.push('販売形式の絞り込みあり');
     if (q.get('conditionIds')) warn.push('コンディションの絞り込みあり');
-    const wb = $('#yr-warn'); if (wb) wb.textContent = warn.length ? '⚠ 絞り込み: ' + warn.join('・') + '（基準は 30日・下限$0・絞り込みなし。表の上の Reset で解除）' : '';
+    if (!q.get('sellerCountry')) warn.push('日本セラー限定になっていない');
+    const info = [];
+    if (q.get('minPrice')) info.push(`$${q.get('minPrice')}以上`);
+    if (q.getAll('format').length) info.push('オークション除く');
+    const wb = $('#yr-warn'); if (wb) { wb.textContent = warn.length ? '⚠ ' + warn.join('・') : ''; if (info.length) wb.textContent += (warn.length ? '　' : '') + '条件: ' + info.join('・'); wb.style.color = warn.length ? '#b35c00' : '#666'; }
     if (!rows.length) {
       const hasTable = /Avg sold price|Total sold|Date last sold/i.test(document.body.innerText);
       $('#yr-msg').style.color = '#c00';
@@ -466,7 +469,7 @@
     }
   }
 
-  const VERSION = '3.7';
+  const VERSION = '3.8';
   function addLauncher() {
     const old = $('#yr-launch');
     if (old && old.dataset.v === VERSION) return;
