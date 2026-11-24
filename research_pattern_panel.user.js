@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eBay Research パターン検索＆集計パネル
 // @namespace    yoriko.research
-// @version      1.1.0
+// @version      1.2.0
 // @description  Research Products ページで、パターン（1/2/3）・カテゴリー・Sold/Activeをボタンで指定してKW検索し、全ページを自動でめくって条件に合う商品を集計する。各パターンの条件は自分で編集できる
 // @match        https://www.ebay.com/sh/research*
 // @updateURL    https://raw.githubusercontent.com/affyokko-gh/yoriko-research-tools/main/research_pattern_panel.user.js
@@ -211,6 +211,12 @@
 
   // ===== 抽出 =====
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // 「Mar 9, 2024」→「2024-03-09」（並べ替えできる形で記録）
+  const isoDate = s => {
+    const t = (s || '').trim(); if (!t) return '';
+    const d = new Date(t); if (isNaN(d)) return t;
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
   const num = s => { const m = (s || '').replace(/,/g, '').match(/[\d.]+/); return m ? +m[0] : 0; };
   const curMode = () => (new URLSearchParams(location.search).get('tabName') || 'SOLD').toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'SOLD';
   // 画面には Sold と Active の両方の表・ページ送りが残るので、表示中のものだけを使う
@@ -240,7 +246,7 @@
           price: num(ct(r, 'avgSoldPrice').split('|')[0]),
           ship: num(ct(r, 'avgShippingCost').split('|')[0]),
           sold: num(ct(r, 'totalSoldCount')),
-          last: ct(r, 'dateLastSold').split('|')[0].trim() };
+          last: isoDate(ct(r, 'dateLastSold').split('|')[0]) };
       }
       // Active の価格欄は本物の日本円（例：¥40,391 +¥7,951 shipping）
       const lp = ct(r, 'listingPrice');
@@ -251,7 +257,7 @@
         watchers: num(ct(r, 'watchers')),
         bids: num(ct(r, 'bids')),
         promoted: (ct(r, 'promotedListing').replace(/[–-]/g, '').trim()),
-        start: ct(r, 'startedDate').split('|')[0].trim() };
+        start: isoDate(ct(r, 'startedDate').split('|')[0]) };
     });
   }
 
@@ -379,7 +385,7 @@
     const kept = state.results.filter(r => !r.reason);
     const summary = m === 'SOLD'
       ? `販売数合計 ${kept.reduce((s, r) => s + r.sold, 0)}`
-      : `平均価格 $${kept.length ? (kept.reduce((s, r) => s + r.price, 0) / kept.length).toFixed(2) : '0'}`;
+      : `ウォッチ数合計 ${kept.reduce((s, r) => s + (r.watchers || 0), 0).toLocaleString()}・平均価格 $${kept.length ? (kept.reduce((s, r) => s + r.price, 0) / kept.length).toFixed(2) : '0'}`;
     const md = document.createElement('div');
     md.id = 'yr-modal';
     md.innerHTML = `
@@ -436,7 +442,7 @@
   try {
     const last = JSON.parse(sessionStorage.getItem(LS + 'last') || 'null');
     if (last?.rows?.length) {
-      state.results = last.rows; state.resMode = last.mode || 'SOLD'; state.resPattern = last.pattern || 3; state.rate = last.rate || 0;
+      state.results = last.rows.map(r => ({ ...r, last: isoDate(r.last), start: isoDate(r.start) })); state.resMode = last.mode || 'SOLD'; state.resPattern = last.pattern || 3; state.rate = last.rate || 0;
       $('#yr-show').style.display = '';
     }
   } catch (e) {}
