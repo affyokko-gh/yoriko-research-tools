@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eBay Research パターン検索＆集計パネル
 // @namespace    yoriko.research
-// @version      1.2.0
+// @version      1.3.0
 // @description  Research Products ページで、パターン（1/2/3）・カテゴリー・Sold/Activeをボタンで指定してKW検索し、全ページを自動でめくって条件に合う商品を集計する。各パターンの条件は自分で編集できる
 // @match        https://www.ebay.com/sh/research*
 // @updateURL    https://raw.githubusercontent.com/affyokko-gh/yoriko-research-tools/main/research_pattern_panel.user.js
@@ -17,9 +17,9 @@
 
   // ===== 初期設定（パネルで変更でき、変更はこのPCのブラウザに保存される） =====
   const DEFAULTS = {
-    1: { days: 7,  minPrice: 50,  maxPrice: '', minSold: 2, cond: 'any',  minProfit: 100 },
-    2: { days: 30, minPrice: 150, maxPrice: '', minSold: 4, cond: 'used', minProfit: 1500 },
-    3: { days: 90, minPrice: 200, maxPrice: '', minSold: 2, cond: 'used', minProfit: 2000 },
+    1: { days: 7,  minPrice: 50,  maxPrice: '', minSold: 2, cond: 'any',  minProfit: 100,  activeDays: 7, minWatchers: 2 },
+    2: { days: 30, minPrice: 150, maxPrice: '', minSold: 4, cond: 'used', minProfit: 1500, activeDays: 7, minWatchers: 2 },
+    3: { days: 90, minPrice: 200, maxPrice: '', minSold: 2, cond: 'used', minProfit: 2000, activeDays: 7, minWatchers: 2 },
   };
   const DAY_OPTIONS = [[7, '7日'], [30, '30日'], [90, '90日'], [180, '6か月'], [365, '1年']];
   const COND_OPTIONS = [['any', '新品・中古'], ['used', '中古'], ['new', '新品']];
@@ -107,6 +107,8 @@
           <div><label>最高価格($・空欄で上限なし)</label><input type="number" min="0" data-f="maxPrice"></div>
           <div><label>最低販売数（Soldのみ）</label><input type="number" min="1" data-f="minSold"></div>
           <div><label>利益条件(円)</label><input type="number" min="0" step="100" data-f="minProfit"></div>
+          <div><label>出品開始から○日以内（Activeのみ）</label><input type="number" min="1" data-f="activeDays"></div>
+          <div><label>最低ウォッチ数（Activeのみ）</label><input type="number" min="0" data-f="minWatchers"></div>
         </div>
         <button class="yr-reset" id="yr-reset">このパターンを初期値に戻す</button>
       </div>
@@ -132,9 +134,9 @@
     panel.querySelectorAll('#yr-cat .yr-btn').forEach(b => b.classList.toggle('on', b.dataset.v === state.cat));
     const p = PAT[state.pattern];
     panel.querySelectorAll('#yr-cond [data-f]').forEach(el => { el.value = p[el.dataset.f]; });
-    const ms = panel.querySelector('#yr-cond [data-f="minSold"]');
-    ms.disabled = state.mode === 'ACTIVE';
-    panel.querySelector('#yr-cond [data-f="days"]').disabled = state.mode === 'ACTIVE';
+    const act = state.mode === 'ACTIVE';
+    for (const f of ['minSold', 'days']) panel.querySelector(`#yr-cond [data-f="${f}"]`).disabled = act;
+    for (const f of ['activeDays', 'minWatchers']) panel.querySelector(`#yr-cond [data-f="${f}"]`).disabled = !act;
   }
   panel.querySelector('#yr-mode').addEventListener('click', e => {
     const b = e.target.closest('.yr-btn'); if (!b) return;
@@ -198,6 +200,7 @@
     if (+p.minPrice > 0) q.set('minPrice', String(p.minPrice));
     if (p.maxPrice !== '' && +p.maxPrice > 0) q.set('maxPrice', String(p.maxPrice));
     if (COND_ID[p.cond]) q.set('conditionId', COND_ID[p.cond]);
+    if (state.mode === 'ACTIVE') q.set('sorting', '-startDate');   // 出品開始日の新しい順
     return 'https://www.ebay.com/sh/research?' + q.toString();
   }
 
@@ -218,6 +221,10 @@
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   };
   const num = s => { const m = (s || '').replace(/,/g, '').match(/[\d.]+/); return m ? +m[0] : 0; };
+  function cutoffISO(days) {   // 日本時間の今日からdays日前（YYYY-MM-DD）
+    const d = new Date(Date.now() + 9 * 3600e3 - days * 86400e3);
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  }
   const curMode = () => (new URLSearchParams(location.search).get('tabName') || 'SOLD').toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'SOLD';
   // 画面には Sold と Active の両方の表・ページ送りが残るので、表示中のものだけを使う
   const TABLE = { SOLD: '.sold-result-table', ACTIVE: '.active-result-table' };
@@ -287,6 +294,10 @@
     if (!r.itemId) return '商品IDなし';
     if (!r.url || !r.title) return '削除済み';
     if (LOT_RE.test(r.title)) return 'まとめ売り';
+    if (m === 'ACTIVE') {
+      if (/^\d{4}-/.test(r.start || '') && r.start < cutoffISO(+p.activeDays)) return `出品開始${p.activeDays}日より前`;
+      if (r.watchers < +p.minWatchers) return `ウォッチ${p.minWatchers}未満`;
+    }
     if (m === 'SOLD') {
       if (r.sold < p.minSold) return `販売数${p.minSold}未満`;
       if (r.sold >= MAX_SOLD) return `販売数${MAX_SOLD}以上`;
@@ -318,6 +329,8 @@
         // Sold は販売数の多い順なので、最後の行が最低販売数を下回ったら終了
         if (!rows.length || !nx || nx.disabled || nx.getAttribute('aria-disabled') === 'true' || rows.length < 50) break;
         if (m === 'SOLD' && rows.at(-1).sold < p.minSold) break;
+        // Active は出品開始日の新しい順なので、指定日数より古い出品が出たら終了
+        if (m === 'ACTIVE' && /-startDate/.test(location.search) && /^\d{4}-/.test(rows.at(-1).start || '') && rows.at(-1).start < cutoffISO(+p.activeDays)) break;
         const o = offset(), f = firstId(m);
         nx.click();
         let ok = false;
@@ -386,11 +399,12 @@
     const summary = m === 'SOLD'
       ? `販売数合計 ${kept.reduce((s, r) => s + r.sold, 0)}`
       : `ウォッチ数合計 ${kept.reduce((s, r) => s + (r.watchers || 0), 0).toLocaleString()}・平均価格 $${kept.length ? (kept.reduce((s, r) => s + r.price, 0) / kept.length).toFixed(2) : '0'}`;
+    const cond = m === 'ACTIVE' ? `出品開始${p.activeDays}日以内・ウォッチ${p.minWatchers}以上` : `販売数${p.minSold}以上`;
     const md = document.createElement('div');
     md.id = 'yr-modal';
     md.innerHTML = `
       <div class="yr-mh">
-        <b>${m === 'SOLD' ? 'Sold' : 'Active'}／パターン${state.resPattern}の集計：条件に合う商品 ${kept.length}件（${summary}）／取得 ${state.results.length}件</b>
+        <b>${m === 'SOLD' ? 'Sold' : 'Active'}／パターン${state.resPattern}の集計（${cond}）：条件に合う商品 ${kept.length}件（${summary}）／取得 ${state.results.length}件</b>
         <label><input type="checkbox" id="yr-ex" ${showExcluded ? 'checked' : ''}> 除外した商品も表示</label>
         <button id="yr-tsv">表をコピー（シート貼付用）</button>
         <button id="yr-csv">CSVで保存</button>
